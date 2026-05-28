@@ -21,15 +21,13 @@ def nmcli(args):
     return run(["nmcli"] + args)
 
 
-@app.route("/")
-def index():
-    return render_template_string("""
+HTML = """
 <!doctype html>
 <html>
 <head>
   <title>Wipi Portal</title>
   <style>
-    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; }
+    body { font-family: sans-serif; max-width: 800px; margin: 40px auto; }
     input, button, select { width: 100%; padding: 10px; margin: 8px 0; }
     pre { background: #eee; padding: 12px; overflow: auto; }
   </style>
@@ -45,7 +43,7 @@ def index():
   <button onclick="connectPersonal()">Connect</button>
 
   <h2>WPA Enterprise</h2>
-  <input id="ent_ssid" value="wpa.mcgill.ca" placeholder="SSID">
+  <input id="ent_ssid" value="wpa.mcgill.ca" placeholder="Enterprise SSID">
   <input id="identity" placeholder="Username">
   <input id="ent_password" type="password" placeholder="Password">
   <button onclick="connectEnterprise()">Connect Enterprise</button>
@@ -63,22 +61,23 @@ async function api(url, data=null) {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(data)
   } : {};
+
   const res = await fetch(url, opts);
-  document.getElementById("out").textContent =
-    JSON.stringify(await res.json(), null, 2);
+  const json = await res.json();
+  document.getElementById("out").textContent = JSON.stringify(json, null, 2);
+  return json;
 }
 
 async function scan() {
-  const res = await fetch("/api/scan");
-  const data = await res.json();
-  document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+  const data = await api("/api/scan");
 
   const select = document.getElementById("ssid");
   select.innerHTML = "";
+
   for (const n of data.networks || []) {
     const opt = document.createElement("option");
     opt.value = n.ssid;
-    opt.textContent = `${n.ssid} (${n.signal}%) ${n.security}`;
+    opt.textContent = `${n.ssid} | ${n.signal}% | ch ${n.channel} | ${n.security}`;
     select.appendChild(opt);
   }
 }
@@ -108,7 +107,12 @@ function status() {
 </script>
 </body>
 </html>
-""")
+"""
+
+
+@app.route("/")
+def index():
+    return render_template_string(HTML)
 
 
 @app.route("/api/status")
@@ -116,41 +120,62 @@ def status():
     return jsonify({
         "devices": nmcli(["device", "status"]),
         "active_connections": nmcli(["connection", "show", "--active"]),
+        "wifi_connections": nmcli(["connection", "show"]),
         "wlan0_ip": run(["ip", "addr", "show", WIFI_IF]),
     })
 
 
 @app.route("/api/scan")
 def scan():
-    nmcli(["device", "wifi", "rescan", "ifname", WIFI_IF])
-
     result = nmcli([
         "-t",
-        "-f", "SSID,SIGNAL,SECURITY",
+        "--escape", "no",
+        "-f", "SSID,BSSID,SIGNAL,SECURITY,CHAN,FREQ,RATE",
         "device", "wifi", "list",
-        "ifname", WIFI_IF
+        "ifname", WIFI_IF,
+        "--rescan", "yes"
     ])
 
     networks = []
-    for line in result["stdout"].splitlines():
-        parts = line.split(":")
-        if len(parts) >= 3 and parts[0]:
-            networks.append({
-                "ssid": parts[0],
-                "signal": parts[1],
-                "security": ":".join(parts[2:])
-            })
 
-    return jsonify({"ok": result["ok"], "networks": networks})
+    for line in result["stdout"].splitlines():
+        parts = line.split(":", 6)
+
+        if len(parts) < 7:
+            continue
+
+        ssid, bssid, signal, security, channel, freq, rate = parts
+
+        if not ssid:
+            ssid = "<hidden>"
+
+        networks.append({
+            "ssid": ssid,
+            "bssid": bssid,
+            "signal": signal,
+            "security": security,
+            "channel": channel,
+            "frequency": freq,
+            "rate": rate,
+        })
+
+    return jsonify({
+        "ok": result["ok"],
+        "count": len(networks),
+        "networks": networks,
+        "raw": result["stdout"],
+        "stderr": result["stderr"],
+    })
 
 
 @app.route("/api/connect-personal", methods=["POST"])
 def connect_personal():
     data = request.json or {}
+
     ssid = data.get("ssid")
     password = data.get("password")
 
-    if not ssid or not password:
+    if not ssid or ssid == "<hidden>" or not password:
         return jsonify({"ok": False, "error": "SSID and password required"}), 400
 
     nmcli(["connection", "down", HOTSPOT_NAME])
@@ -167,6 +192,7 @@ def connect_personal():
 @app.route("/api/connect-enterprise", methods=["POST"])
 def connect_enterprise():
     data = request.json or {}
+
     ssid = data.get("ssid")
     identity = data.get("identity")
     password = data.get("password")
