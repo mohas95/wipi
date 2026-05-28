@@ -120,13 +120,34 @@ def connect_personal():
     if not ssid or ssid == "<hidden>" or not password:
         return jsonify({"ok": False, "error": "SSID and password required"}), 400
 
-    result = nmcli([
-        "device", "wifi", "connect", ssid,
-        "password", password,
-        "ifname", WIFI_IF
+    con_name = f"wifi-{ssid}"
+
+    nmcli(["connection", "delete", con_name])
+
+    create = nmcli([
+        "connection", "add",
+        "type", "wifi",
+        "ifname", WIFI_IF,
+        "con-name", con_name,
+        "ssid", ssid
     ])
 
-    return jsonify(result)
+    config = nmcli([
+        "connection", "modify", con_name,
+        "wifi-sec.key-mgmt", "wpa-psk",
+        "wifi-sec.psk", password,
+        "ipv4.method", "auto",
+        "ipv6.method", "ignore",
+        "connection.autoconnect", "yes"
+    ])
+
+    up = nmcli(["connection", "up", con_name])
+
+    return jsonify({
+        "create": create,
+        "config": config,
+        "up": up
+    })
 
 
 @app.route("/api/connect-enterprise", methods=["POST"])
