@@ -35,7 +35,9 @@
     }
   </style>
 </head>
-<body>
+
+<body onload="status(); loadConnections();">
+
   <h1>Wipi Wi-Fi Portal</h1>
 
   <div class="section">
@@ -73,9 +75,10 @@
   </div>
 
   <div class="section">
-    <h2>Forget Saved Connection</h2>
-    <input id="forget_name" placeholder="Connection name to delete">
-    <button onclick="forgetConnection()">Forget Connection</button>
+    <h2>Forget Saved Wi-Fi Connection</h2>
+    <button onclick="loadConnections()">Refresh Saved Connections</button>
+    <select id="forget_name"></select>
+    <button onclick="forgetConnection()">Forget Selected Connection</button>
   </div>
 
   <div class="section">
@@ -93,12 +96,30 @@ async function api(url, data = null) {
 
   const res = await fetch(url, opts);
   const json = await res.json();
+
   document.getElementById("out").textContent = JSON.stringify(json, null, 2);
   return json;
 }
 
 async function status() {
   return api("/api/status");
+}
+
+async function loadConnections() {
+  const data = await api("/api/connections");
+
+  const select = document.getElementById("forget_name");
+  select.innerHTML = "";
+
+  for (const c of data.connections || []) {
+    const opt = document.createElement("option");
+    opt.value = c.name;
+
+    const active = c.active ? "ACTIVE" : "saved";
+    opt.textContent = `${c.name} | ${active} | autoconnect=${c.autoconnect}`;
+
+    select.appendChild(opt);
+  }
 }
 
 async function scan() {
@@ -137,7 +158,7 @@ function enterSetupMode() {
 function forgetConnection() {
   api("/api/forget", {
     name: document.getElementById("forget_name").value
-  });
+  }).then(() => loadConnections());
 }
 </script>
 </body>

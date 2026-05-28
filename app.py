@@ -37,6 +37,41 @@ def status():
     })
 
 
+@app.route("/api/connections")
+def connections():
+    result = nmcli([
+        "-t",
+        "--escape", "no",
+        "-f", "NAME,TYPE,DEVICE,AUTOCONNECT",
+        "connection", "show"
+    ])
+
+    connections = []
+
+    for line in result["stdout"].splitlines():
+        parts = line.split(":", 3)
+        if len(parts) < 4:
+            continue
+
+        name, ctype, device, autoconnect = parts
+
+        if ctype == "wifi":
+            connections.append({
+                "name": name,
+                "type": ctype,
+                "device": device,
+                "autoconnect": autoconnect,
+                "active": device == WIFI_IF
+            })
+
+    return jsonify({
+        "ok": result["ok"],
+        "connections": connections,
+        "raw": result["stdout"],
+        "stderr": result["stderr"],
+    })
+
+
 @app.route("/api/scan")
 def scan():
     result = nmcli([
@@ -154,10 +189,6 @@ def forget():
 
 @app.route("/api/enter-setup-mode", methods=["POST"])
 def enter_setup_mode():
-    """
-    Deletes active Wi-Fi client profiles.
-    The autohotspot daemon should then notice no internet and start WipiSetup.
-    """
     active = nmcli(["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"])
 
     deleted = []
@@ -177,7 +208,7 @@ def enter_setup_mode():
 
     return jsonify({
         "ok": True,
-        "message": "Deleted active Wi-Fi profile(s). Autohotspot daemon should start setup hotspot shortly.",
+        "message": "Deleted active Wi-Fi profile(s). Autohotspot should start WipiSetup shortly.",
         "deleted": deleted
     })
 
