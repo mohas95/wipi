@@ -13,6 +13,10 @@ cd wipi
 
 chmod +x setup-pi-ethernet-gateway.sh
 sudo ./setup-pi-ethernet-gateway.sh
+
+chmod +x autohotspot.sh
+sudo ln -s /home/pi/wipi/wipi-autohotspot.service /etc/systemd/system/wipi-autohotspot.service
+
 ```
 
 ##
