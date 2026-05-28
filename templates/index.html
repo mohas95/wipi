@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+  <title>Wipi Portal</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 850px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+
+    input, button, select {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      box-sizing: border-box;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    pre {
+      background: #eee;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+
+    .section {
+      border-top: 1px solid #ccc;
+      margin-top: 24px;
+      padding-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Wipi Wi-Fi Portal</h1>
+
+  <div class="section">
+    <h2>Status</h2>
+    <button onclick="status()">Refresh Status</button>
+  </div>
+
+  <div class="section">
+    <h2>Available Wi-Fi Networks</h2>
+    <button onclick="scan()">Scan Wi-Fi</button>
+    <select id="ssid"></select>
+  </div>
+
+  <div class="section">
+    <h2>Normal Wi-Fi</h2>
+    <input id="password" type="password" placeholder="Wi-Fi password">
+    <button onclick="connectPersonal()">Connect Normal Wi-Fi</button>
+  </div>
+
+  <div class="section">
+    <h2>WPA Enterprise</h2>
+    <input id="ent_ssid" value="wpa.mcgill.ca" placeholder="Enterprise SSID">
+    <input id="identity" placeholder="Username">
+    <input id="ent_password" type="password" placeholder="Password">
+    <button onclick="connectEnterprise()">Connect Enterprise Wi-Fi</button>
+  </div>
+
+  <div class="section">
+    <h2>Setup Mode</h2>
+    <p>
+      This forgets the currently active Wi-Fi profile. Your autohotspot daemon
+      should then start the WipiSetup hotspot automatically.
+    </p>
+    <button onclick="enterSetupMode()">Forget Current Wi-Fi / Enter Setup Mode</button>
+  </div>
+
+  <div class="section">
+    <h2>Forget Saved Connection</h2>
+    <input id="forget_name" placeholder="Connection name to delete">
+    <button onclick="forgetConnection()">Forget Connection</button>
+  </div>
+
+  <div class="section">
+    <h2>Output</h2>
+    <pre id="out"></pre>
+  </div>
+
+<script>
+async function api(url, data = null) {
+  const opts = data ? {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  } : {};
+
+  const res = await fetch(url, opts);
+  const json = await res.json();
+  document.getElementById("out").textContent = JSON.stringify(json, null, 2);
+  return json;
+}
+
+async function status() {
+  return api("/api/status");
+}
+
+async function scan() {
+  const data = await api("/api/scan");
+
+  const select = document.getElementById("ssid");
+  select.innerHTML = "";
+
+  for (const n of data.networks || []) {
+    const opt = document.createElement("option");
+    opt.value = n.ssid;
+    opt.textContent = `${n.ssid} | ${n.signal}% | ch ${n.channel} | ${n.security}`;
+    select.appendChild(opt);
+  }
+}
+
+function connectPersonal() {
+  api("/api/connect-personal", {
+    ssid: document.getElementById("ssid").value,
+    password: document.getElementById("password").value
+  });
+}
+
+function connectEnterprise() {
+  api("/api/connect-enterprise", {
+    ssid: document.getElementById("ent_ssid").value,
+    identity: document.getElementById("identity").value,
+    password: document.getElementById("ent_password").value
+  });
+}
+
+function enterSetupMode() {
+  api("/api/enter-setup-mode", {});
+}
+
+function forgetConnection() {
+  api("/api/forget", {
+    name: document.getElementById("forget_name").value
+  });
+}
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template
 import subprocess
 
 app = Flask(__name__)
@@ -14,6 +14,7 @@ def run(cmd):
         "stdout": r.stdout.strip(),
         "stderr": r.stderr.strip(),
         "code": r.returncode,
+        "cmd": " ".join(cmd),
     }
 
 
@@ -21,107 +22,18 @@ def nmcli(args):
     return run(["nmcli"] + args)
 
 
-HTML = """
-<!doctype html>
-<html>
-<head>
-  <title>Wipi Portal</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 40px auto; }
-    input, button, select { width: 100%; padding: 10px; margin: 8px 0; }
-    pre { background: #eee; padding: 12px; overflow: auto; }
-  </style>
-</head>
-<body>
-  <h1>Wipi Wi-Fi Portal</h1>
-
-  <button onclick="scan()">Scan Wi-Fi</button>
-  <select id="ssid"></select>
-
-  <h2>Normal Wi-Fi</h2>
-  <input id="password" type="password" placeholder="Wi-Fi password">
-  <button onclick="connectPersonal()">Connect</button>
-
-  <h2>WPA Enterprise</h2>
-  <input id="ent_ssid" value="wpa.mcgill.ca" placeholder="Enterprise SSID">
-  <input id="identity" placeholder="Username">
-  <input id="ent_password" type="password" placeholder="Password">
-  <button onclick="connectEnterprise()">Connect Enterprise</button>
-
-  <h2>Controls</h2>
-  <button onclick="status()">Status</button>
-  <button onclick="hotspot()">Enter Hotspot Mode</button>
-
-  <pre id="out"></pre>
-
-<script>
-async function api(url, data=null) {
-  const opts = data ? {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(data)
-  } : {};
-
-  const res = await fetch(url, opts);
-  const json = await res.json();
-  document.getElementById("out").textContent = JSON.stringify(json, null, 2);
-  return json;
-}
-
-async function scan() {
-  const data = await api("/api/scan");
-
-  const select = document.getElementById("ssid");
-  select.innerHTML = "";
-
-  for (const n of data.networks || []) {
-    const opt = document.createElement("option");
-    opt.value = n.ssid;
-    opt.textContent = `${n.ssid} | ${n.signal}% | ch ${n.channel} | ${n.security}`;
-    select.appendChild(opt);
-  }
-}
-
-function connectPersonal() {
-  api("/api/connect-personal", {
-    ssid: document.getElementById("ssid").value,
-    password: document.getElementById("password").value
-  });
-}
-
-function connectEnterprise() {
-  api("/api/connect-enterprise", {
-    ssid: document.getElementById("ent_ssid").value,
-    identity: document.getElementById("identity").value,
-    password: document.getElementById("ent_password").value
-  });
-}
-
-function hotspot() {
-  api("/api/hotspot", {});
-}
-
-function status() {
-  api("/api/status");
-}
-</script>
-</body>
-</html>
-"""
-
-
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    return render_template("index.html")
 
 
 @app.route("/api/status")
 def status():
     return jsonify({
         "devices": nmcli(["device", "status"]),
-        "active_connections": nmcli(["connection", "show", "--active"]),
-        "wifi_connections": nmcli(["connection", "show"]),
-        "wlan0_ip": run(["ip", "addr", "show", WIFI_IF]),
+        "active": nmcli(["connection", "show", "--active"]),
+        "connections": nmcli(["connection", "show"]),
+        "wlan0": run(["ip", "addr", "show", WIFI_IF]),
     })
 
 
@@ -130,7 +42,7 @@ def scan():
     result = nmcli([
         "-t",
         "--escape", "no",
-        "-f", "SSID,BSSID,SIGNAL,SECURITY,CHAN,FREQ,RATE",
+        "-f", "SSID,BSSID,SIGNAL,SECURITY,CHAN,FREQ",
         "device", "wifi", "list",
         "ifname", WIFI_IF,
         "--rescan", "yes"
@@ -139,24 +51,19 @@ def scan():
     networks = []
 
     for line in result["stdout"].splitlines():
-        parts = line.split(":", 6)
-
-        if len(parts) < 7:
+        parts = line.split(":", 5)
+        if len(parts) < 6:
             continue
 
-        ssid, bssid, signal, security, channel, freq, rate = parts
-
-        if not ssid:
-            ssid = "<hidden>"
+        ssid, bssid, signal, security, channel, freq = parts
 
         networks.append({
-            "ssid": ssid,
+            "ssid": ssid if ssid else "<hidden>",
             "bssid": bssid,
             "signal": signal,
             "security": security,
             "channel": channel,
             "frequency": freq,
-            "rate": rate,
         })
 
     return jsonify({
@@ -177,8 +84,6 @@ def connect_personal():
 
     if not ssid or ssid == "<hidden>" or not password:
         return jsonify({"ok": False, "error": "SSID and password required"}), 400
-
-    nmcli(["connection", "down", HOTSPOT_NAME])
 
     result = nmcli([
         "device", "wifi", "connect", ssid,
@@ -202,7 +107,6 @@ def connect_enterprise():
 
     con_name = f"enterprise-{ssid}"
 
-    nmcli(["connection", "down", HOTSPOT_NAME])
     nmcli(["connection", "delete", con_name])
 
     create = nmcli([
@@ -235,10 +139,47 @@ def connect_enterprise():
     })
 
 
-@app.route("/api/hotspot", methods=["POST"])
-def hotspot():
-    result = nmcli(["connection", "up", HOTSPOT_NAME])
+@app.route("/api/forget", methods=["POST"])
+def forget():
+    data = request.json or {}
+    name = data.get("name")
+
+    if not name:
+        return jsonify({"ok": False, "error": "connection name required"}), 400
+
+    result = nmcli(["connection", "delete", name])
+
     return jsonify(result)
+
+
+@app.route("/api/enter-setup-mode", methods=["POST"])
+def enter_setup_mode():
+    """
+    Deletes active Wi-Fi client profiles.
+    The autohotspot daemon should then notice no internet and start WipiSetup.
+    """
+    active = nmcli(["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"])
+
+    deleted = []
+
+    for line in active["stdout"].splitlines():
+        parts = line.split(":")
+        if len(parts) < 3:
+            continue
+
+        name, ctype, device = parts[0], parts[1], parts[2]
+
+        if ctype == "wifi" and device == WIFI_IF and name != HOTSPOT_NAME:
+            deleted.append({
+                "name": name,
+                "result": nmcli(["connection", "delete", name])
+            })
+
+    return jsonify({
+        "ok": True,
+        "message": "Deleted active Wi-Fi profile(s). Autohotspot daemon should start setup hotspot shortly.",
+        "deleted": deleted
+    })
 
 
 if __name__ == "__main__":
