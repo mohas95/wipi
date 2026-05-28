@@ -3,6 +3,18 @@
 default hostname: wipi.local
 
 
+
+## Installation
+
+```bash
+
+git clone git@github.com:mohas95/wipi.git
+cd wipi
+
+chmod +x setup-pi-ethernet-gateway.sh
+sudo ./setup-pi-ethernet-gateway.sh
+```
+
 ##
 ``` bash
 [Main WiFi Network]
