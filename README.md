@@ -1,6 +1,9 @@
 # wipi network gateway and portal
 
-This project is aimed creating a gateway from the raspberry pi's wireless network card to the ethernet port to provide internet access to routers (particularly for IOT projects).
+This project is aimed creating a light weight gateway from the raspberry pi's wireless network card to the ethernet port to provide internet access to routers (particularly for IOT projects).
+
+![](assets/img/portal_preview.png)
+
 
 ### Network structure
 ``` bash
