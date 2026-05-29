@@ -17,6 +17,15 @@ sudo ./setup-pi-ethernet-gateway.sh
 chmod +x autohotspot.sh
 sudo ln -s /home/pi/wipi/wipi-autohotspot.service /etc/systemd/system/wipi-autohotspot.service
 
+sudo ln -s /home/pi/wipi/wipi-portal.service /etc/systemd/system/wipi-portal.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable wipi-autohotspot
+sudo systemctl start wipi-autohotspot
+
+sudo systemctl enable wipi-portal
+sudo systemctl start wipi-portal
+
 ```
 
 ##

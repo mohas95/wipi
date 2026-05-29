@@ -6,6 +6,34 @@ app = Flask(__name__)
 WIFI_IF = "wlan0"
 HOTSPOT_NAME = "WipiSetup"
 
+LAN_IF = "eth0"
+DNSMASQ_LEASES = "/var/lib/misc/dnsmasq.leases"
+
+def get_active_wifi_ssid():
+    result = nmcli([
+        "-t",
+        "--escape", "no",
+        "-f", "ACTIVE,SSID",
+        "device", "wifi",
+        "list",
+        "ifname", WIFI_IF
+    ])
+
+    for line in result["stdout"].splitlines():
+        parts = line.split(":", 1)
+        if len(parts) == 2 and parts[0] == "yes":
+            return parts[1]
+
+    return None
+
+def get_ipv4(interface):
+    result = run(["ip", "-4", "addr", "show", interface])
+    for line in result["stdout"].splitlines():
+        line = line.strip()
+        if line.startswith("inet "):
+            return line.split()[1]
+    return None
+
 
 def run(cmd):
     r = subprocess.run(cmd, text=True, capture_output=True)
@@ -27,13 +55,113 @@ def index():
     return render_template("index.html")
 
 
+
+@app.route("/api/network-info")
+def network_info():
+    leases = []
+
+    try:
+        with open(DNSMASQ_LEASES, "r") as f:
+            for line in f.readlines():
+                parts = line.strip().split()
+                if len(parts) >= 4:
+                    leases.append({
+                        "expires": parts[0],
+                        "mac": parts[1],
+                        "ip": parts[2],
+                        "hostname": parts[3],
+                    })
+    except FileNotFoundError:
+        pass
+
+    neigh_result = run(["ip", "neigh", "show", "dev", LAN_IF])
+
+    neighbors = []
+    for line in neigh_result["stdout"].splitlines():
+        parts = line.split()
+        if len(parts) >= 5:
+            neighbors.append({
+                "ip": parts[0],
+                "mac": parts[4],
+                "state": parts[-1],
+            })
+
+    return jsonify({
+        "ok": True,
+        "wifi": {
+            "interface": WIFI_IF,
+            "ip": get_ipv4(WIFI_IF),
+            "ssid": get_active_wifi_ssid(),
+        },
+        "ethernet": {
+            "interface": LAN_IF,
+            "ip": get_ipv4(LAN_IF),
+            "dhcp_leases": leases,
+            "neighbors": neighbors,
+        }
+    })
+
 @app.route("/api/status")
 def status():
+
+    device_result = nmcli([
+        "-t",
+        "--escape", "no",
+        "-f", "DEVICE,TYPE,STATE,CONNECTION",
+        "device", "status"
+    ])
+
+    active_result = nmcli([
+        "-t",
+        "--escape", "no",
+        "-f", "NAME,TYPE,DEVICE",
+        "connection", "show", "--active"
+    ])
+
+    devices = []
+
+    for line in device_result["stdout"].splitlines():
+        parts = line.split(":", 3)
+
+        if len(parts) < 4:
+            continue
+
+        device, dtype, state, connection = parts
+
+        devices.append({
+            "device": device,
+            "type": dtype,
+            "state": state,
+            "connection": connection
+        })
+
+    active_connections = []
+
+    for line in active_result["stdout"].splitlines():
+        parts = line.split(":", 2)
+
+        if len(parts) < 3:
+            continue
+
+        name, ctype, device = parts
+
+        active_connections.append({
+            "name": name,
+            "type": ctype,
+            "device": device
+        })
+
+    ip_result = run(["hostname", "-I"])
+
     return jsonify({
-        "devices": nmcli(["device", "status"]),
-        "active": nmcli(["connection", "show", "--active"]),
-        "connections": nmcli(["connection", "show"]),
-        "wlan0": run(["ip", "addr", "show", WIFI_IF]),
+        "ok": True,
+        "internet_connected": any(
+            d["device"] == WIFI_IF and "connected" in d["state"]
+            for d in devices
+        ),
+        "devices": devices,
+        "active_connections": active_connections,
+        "ip_addresses": ip_result["stdout"].split(),
     })
 
 
@@ -55,7 +183,7 @@ def connections():
 
         name, ctype, device, autoconnect = parts
 
-        if ctype == "wifi":
+        if ctype in ("wifi", "802-11-wireless"):
             connections.append({
                 "name": name,
                 "type": ctype,
@@ -77,7 +205,7 @@ def scan():
     result = nmcli([
         "-t",
         "--escape", "no",
-        "-f", "SSID,BSSID,SIGNAL,SECURITY,CHAN,FREQ",
+        "-f", "SSID,SIGNAL,SECURITY,CHAN,FREQ",
         "device", "wifi", "list",
         "ifname", WIFI_IF,
         "--rescan", "yes"
@@ -86,15 +214,15 @@ def scan():
     networks = []
 
     for line in result["stdout"].splitlines():
-        parts = line.split(":", 5)
-        if len(parts) < 6:
+        parts = line.split(":", 4)
+
+        if len(parts) < 5:
             continue
 
-        ssid, bssid, signal, security, channel, freq = parts
+        ssid, signal, security, channel, freq = parts
 
         networks.append({
             "ssid": ssid if ssid else "<hidden>",
-            "bssid": bssid,
             "signal": signal,
             "security": security,
             "channel": channel,
@@ -108,7 +236,6 @@ def scan():
         "raw": result["stdout"],
         "stderr": result["stderr"],
     })
-
 
 @app.route("/api/connect-personal", methods=["POST"])
 def connect_personal():
@@ -143,11 +270,18 @@ def connect_personal():
 
     up = nmcli(["connection", "up", con_name])
 
+    hotspot_delete = None
+
+    if up["ok"]:
+        hotspot_delete = nmcli(["connection", "delete", HOTSPOT_NAME])
+
     return jsonify({
         "create": create,
         "config": config,
-        "up": up
+        "up": up,
+        "hotspot_delete": hotspot_delete
     })
+
 
 
 @app.route("/api/connect-enterprise", methods=["POST"])
@@ -188,12 +322,17 @@ def connect_enterprise():
 
     up = nmcli(["connection", "up", con_name])
 
+    hotspot_delete = None
+
+    if up["ok"]:
+        hotspot_delete = nmcli(["connection", "delete", HOTSPOT_NAME])
+
     return jsonify({
         "create": create,
         "config": config,
-        "up": up
+        "up": up,
+        "hotspot_delete": hotspot_delete
     })
-
 
 @app.route("/api/forget", methods=["POST"])
 def forget():
@@ -210,18 +349,27 @@ def forget():
 
 @app.route("/api/enter-setup-mode", methods=["POST"])
 def enter_setup_mode():
-    active = nmcli(["-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"])
+    """
+    Deletes all saved Wi-Fi client profiles except the hotspot profile.
+    The autohotspot daemon should then start WipiSetup.
+    """
+    result = nmcli([
+        "-t",
+        "--escape", "no",
+        "-f", "NAME,TYPE",
+        "connection", "show"
+    ])
 
     deleted = []
 
-    for line in active["stdout"].splitlines():
-        parts = line.split(":")
-        if len(parts) < 3:
+    for line in result["stdout"].splitlines():
+        parts = line.split(":", 1)
+        if len(parts) < 2:
             continue
 
-        name, ctype, device = parts[0], parts[1], parts[2]
+        name, ctype = parts
 
-        if ctype == "wifi" and device == WIFI_IF and name != HOTSPOT_NAME:
+        if ctype in ("wifi", "802-11-wireless") and name != HOTSPOT_NAME:
             deleted.append({
                 "name": name,
                 "result": nmcli(["connection", "delete", name])
@@ -229,10 +377,11 @@ def enter_setup_mode():
 
     return jsonify({
         "ok": True,
-        "message": "Deleted active Wi-Fi profile(s). Autohotspot should start WipiSetup shortly.",
-        "deleted": deleted
+        "message": "Deleted saved Wi-Fi profile(s). Autohotspot should start WipiSetup shortly.",
+        "deleted": deleted,
+        "raw": result["stdout"],
+        "stderr": result["stderr"],
     })
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

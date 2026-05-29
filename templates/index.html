@@ -17,10 +17,108 @@
       box-sizing: border-box;
     }
 
-    button {
-      cursor: pointer;
+    .wifi-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
     }
 
+    .wifi-row select {
+        flex: 1;
+    }
+
+    .selected-network {
+        margin-top: 8px;
+        color: #555;
+    }
+
+    .device-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .device-table th {
+      text-align: left;
+      background: #f0f0f0;
+    }
+
+    .device-table th,
+    .device-table td {
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    button {
+        cursor: pointer;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        background: white;
+
+        transition:
+            background-color 0.2s ease,
+            border-color 0.2s ease,
+            transform 0.08s ease,
+            box-shadow 0.2s ease;
+
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    button:hover {
+        background: #f5f7fa;
+        border-color: #999;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+    }
+
+    button:active {
+        transform: scale(0.97);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    button:focus-visible {
+        outline: none;
+        border-color: #4a90e2;
+        box-shadow:
+            0 0 0 3px rgba(74,144,226,0.25);
+    }
+
+    .refresh-btn {
+        width: auto;
+        margin: 0;
+        padding: 4px 10px;
+        font-size: 12px;
+
+        min-width: 36px;
+    }
+
+    .refresh-btn:hover {
+        transform: rotate(15deg);
+    }
+
+    .refresh-btn:active {
+        transform: rotate(15deg) scale(0.9);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .info-grid {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 8px;
+    }
+
+    .info-label {
+        font-weight: bold;
+    }
+
+    .card {
+        background: #f8f8f8;
+        border-radius: 8px;
+        padding: 12px;
+    }
     pre {
       background: #eee;
       padding: 12px;
@@ -36,57 +134,101 @@
   </style>
 </head>
 
-<body onload="status(); loadConnections();">
-
+<body onload="initPage();">
   <h1>Wipi Wi-Fi Portal</h1>
 
-  <div class="section">
-    <h2>Status</h2>
-    <button onclick="status()">Refresh Status</button>
-  </div>
 
   <div class="section">
-    <h2>Available Wi-Fi Networks</h2>
-    <button onclick="scan()">Scan Wi-Fi</button>
-    <select id="ssid"></select>
+
+    <div class="section-header">
+      <h2>Network Status</h2>
+      <button class="refresh-btn"
+              onclick="networkInfo()">
+        ↻
+      </button>
+    </div>
+
+    <div class="card">
+
+    <div class="info-grid">
+
+      <div class="info-label">Connected SSID</div>
+      <div id="wifi_ssid">-</div>
+
+      <div class="info-label">WiFi IP (wlan0)</div>
+      <div id="wifi_ip">-</div>
+
+      <div class="info-label">Ethernet IP (eth0)</div>
+      <div id="eth_ip">-</div>
+
+      <div class="info-label">Connected Devices(eth0)</div>
+      <div id="eth_devices">-</div>
+
+    </div>
+
   </div>
 
-  <div class="section">
-    <h2>Normal Wi-Fi</h2>
+  <div class="wifi-row">
+
+
+      <select id="ssid"
+              onchange="updateWifiForm()">
+      </select>
+
+      <button class="refresh-btn"
+              onclick="scan()">
+          ↻
+      </button>
+
+  </div>
+
+  <div class="selected-network">
+      Selected network:
+      <strong id="selected_ssid">None</strong>
+  </div>
+
+
+  <div class="section" id="normal_wifi_section">
+    <h3>WPA2 (Normal) Wi-Fi</h3>
     <input id="password" type="password" placeholder="Wi-Fi password">
     <button onclick="connectPersonal()">Connect Normal Wi-Fi</button>
   </div>
 
-  <div class="section">
-    <h2>WPA Enterprise</h2>
-    <input id="ent_ssid" value="wpa.mcgill.ca" placeholder="Enterprise SSID">
+  <div class="section" id="enterprise_wifi_section" style="display:none;">
+    <h3>WPA Enterprise</h3>
+    <input id="ent_ssid" placeholder="Enterprise SSID">
     <input id="identity" placeholder="Username">
     <input id="ent_password" type="password" placeholder="Password">
     <button onclick="connectEnterprise()">Connect Enterprise Wi-Fi</button>
   </div>
 
   <div class="section">
-    <h2>Setup Mode</h2>
-    <p>
-      This forgets the currently active Wi-Fi profile. Your autohotspot daemon
-      should then start the WipiSetup hotspot automatically.
-    </p>
+    <h2>Enter Hotspot Setup Mode</h2>
     <button onclick="enterSetupMode()">Forget Current Wi-Fi / Enter Setup Mode</button>
   </div>
 
   <div class="section">
     <h2>Forget Saved Wi-Fi Connection</h2>
-    <button onclick="loadConnections()">Refresh Saved Connections</button>
+    <button class="refresh-btn" onclick="loadConnections()">↻</button>
     <select id="forget_name"></select>
+
     <button onclick="forgetConnection()">Forget Selected Connection</button>
   </div>
 
   <div class="section">
     <h2>Output</h2>
-    <pre id="out"></pre>
+    <!-- <pre id="out"></pre> -->
+    <button class="refresh-btn" onclick="status()">↻</button>
+    <details>
+      <summary>Debug Output</summary>
+      <pre id="out"></pre>
+    </details>
   </div>
 
 <script>
+
+let scannedNetworks = [];
+
 async function api(url, data = null) {
   const opts = data ? {
     method: "POST",
@@ -99,6 +241,64 @@ async function api(url, data = null) {
 
   document.getElementById("out").textContent = JSON.stringify(json, null, 2);
   return json;
+}
+
+async function networkInfo() {
+  const data = await api("/api/network-info");
+
+  document.getElementById("wifi_ssid").textContent = data.wifi?.ssid || "-";
+  document.getElementById("wifi_ip").textContent = data.wifi?.ip || "-";
+  document.getElementById("eth_ip").textContent = data.ethernet?.ip || "-";
+
+  const devicesDiv = document.getElementById("eth_devices");
+  devicesDiv.innerHTML = "";
+
+  const leases = data.ethernet?.dhcp_leases || [];
+  const neighbors = data.ethernet?.neighbors || [];
+
+  if (leases.length === 0 && neighbors.length === 0) {
+    devicesDiv.textContent = "No devices found.";
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "device-table";
+
+  table.innerHTML = `
+    <tr>
+      <th>IP</th>
+      <th>MAC</th>
+      <th>Hostname</th>
+      <th>State</th>
+    </tr>
+  `;
+
+  for (const lease of leases) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${lease.ip}</td>
+      <td>${lease.mac}</td>
+      <td>${lease.hostname}</td>
+      <td>DHCP lease</td>
+    `;
+    table.appendChild(row);
+  }
+
+  for (const n of neighbors) {
+    const alreadyShown = leases.some(l => l.ip === n.ip);
+    if (alreadyShown) continue;
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${n.ip}</td>
+      <td>${n.mac}</td>
+      <td>-</td>
+      <td>${n.state}</td>
+    `;
+    table.appendChild(row);
+  }
+
+  devicesDiv.appendChild(table);
 }
 
 async function status() {
@@ -125,20 +325,53 @@ async function loadConnections() {
 async function scan() {
   const data = await api("/api/scan");
 
+  scannedNetworks = data.networks || [];
+
   const select = document.getElementById("ssid");
   select.innerHTML = "";
 
-  for (const n of data.networks || []) {
+  for (let i = 0; i < scannedNetworks.length; i++) {
+    const n = scannedNetworks[i];
+
     const opt = document.createElement("option");
-    opt.value = n.ssid;
+    opt.value = i;
     opt.textContent = `${n.ssid} | ${n.signal}% | ch ${n.channel} | ${n.security}`;
     select.appendChild(opt);
+  }
+
+  updateWifiForm();
+}
+
+function updateWifiForm() {
+  const select = document.getElementById("ssid");
+  const network = scannedNetworks[select.value];
+
+  if (!network) return;
+
+  document.getElementById("selected_ssid").textContent = network.ssid;
+  document.getElementById("ent_ssid").value = network.ssid;
+
+  const security = (network.security || "").toLowerCase();
+
+  const isEnterprise =
+    security.includes("802.1x") ||
+    security.includes("wpa-eap") ||
+    security.includes("enterprise");
+
+  if (isEnterprise) {
+    document.getElementById("normal_wifi_section").style.display = "none";
+    document.getElementById("enterprise_wifi_section").style.display = "block";
+  } else {
+    document.getElementById("normal_wifi_section").style.display = "block";
+    document.getElementById("enterprise_wifi_section").style.display = "none";
   }
 }
 
 function connectPersonal() {
+  const network = scannedNetworks[document.getElementById("ssid").value];
+
   api("/api/connect-personal", {
-    ssid: document.getElementById("ssid").value,
+    ssid: network.ssid,
     password: document.getElementById("password").value
   });
 }
@@ -159,6 +392,19 @@ function forgetConnection() {
   api("/api/forget", {
     name: document.getElementById("forget_name").value
   }).then(() => loadConnections());
+}
+
+function initPage() {
+  status();
+  loadConnections();
+  networkInfo();
+  scan();
+
+  setInterval(() => {
+    status();
+    loadConnections();
+    networkInfo();
+  }, 10000);
 }
 </script>
 </body>

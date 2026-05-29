@@ -1,0 +1,15 @@
+[Unit]
+Description=Wipi Flask Wi-Fi Portal
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/wipi
+ExecStart=/home/pi/wipi/venv/bin/gunicorn --workers 1 --bind 0.0.0.0:80 app:app
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
