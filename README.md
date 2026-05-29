@@ -1,11 +1,36 @@
-# wipi
+# wipi network gateway and portal
 
-default hostname: wipi.local
+This project is aimed creating a gateway from the raspberry pi's wireless network card to the ethernet port to provide internet access to routers (particularly for IOT projects).
 
-
+### Network structure
+``` bash
+[Main WiFi Network]
+        |
+    (WiFi)
+        |
+   Raspberry Pi
+   wlan0 -> internet
+   eth0  -> shared LAN
+        |
+    Ethernet cable
+        |
+   Secondary Router
+        |
+   Devices
+```
 
 ## Installation
+### install.sh
 
+```bash
+git clone git@github.com:mohas95/wipi.git
+cd wipi
+chmod -x install.sh
+sudo ./install.sh
+# Follow instructions during installation
+```
+
+### Manual Installation 
 ```bash
 
 git clone git@github.com:mohas95/wipi.git
@@ -34,19 +59,8 @@ sudo systemctl start wipi-portal
 
 ```
 
-##
-``` bash
-[Main WiFi Network]
-        |
-    (WiFi)
-        |
-   Raspberry Pi
-   wlan0 -> internet
-   eth0  -> shared LAN
-        |
-    Ethernet cable
-        |
-   Secondary Router
-        |
-   Devices
-```
+## Hotspot Information
+- default hostname: wipi.local
+- default ssid (hotspot mode): WipiSetup
+- default psk: configureme123
+- wipi configuration portal: http://< device ip address or hostname.local>
