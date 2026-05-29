@@ -57,12 +57,20 @@ fi
 echo "[5/7] Configuring dnsmasq DHCP on $LAN_IF..."
 mkdir -p /etc/dnsmasq.d
 
+# cat >/etc/dnsmasq.d/pi-ethernet-gateway.conf <<EOF
+# interface=$LAN_IF
+# bind-interfaces
+# dhcp-range=$DHCP_START,$DHCP_END,255.255.255.0,24h
+# dhcp-option=3,$LAN_IP
+# dhcp-option=6,1.1.1.1,8.8.8.8
+# EOF
+
 cat >/etc/dnsmasq.d/pi-ethernet-gateway.conf <<EOF
 interface=$LAN_IF
 bind-interfaces
 dhcp-range=$DHCP_START,$DHCP_END,255.255.255.0,24h
 dhcp-option=3,$LAN_IP
-dhcp-option=6,1.1.1.1,8.8.8.8
+dhcp-option=6,$LAN_IP
 EOF
 
 systemctl restart dnsmasq
