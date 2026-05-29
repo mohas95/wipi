@@ -4,7 +4,6 @@ This project is aimed creating a light weight gateway from the raspberry pi's wi
 
 ![](assets/img/portal_preview.png)
 
-
 ### Network structure
 ``` bash
 [Main WiFi Network]
@@ -20,6 +19,25 @@ This project is aimed creating a light weight gateway from the raspberry pi's wi
    Secondary Router
         |
    Devices
+```
+
+```bash
+wlan0
+  ├─ Auto reconnect
+  ├─ Auto hotspot fallback
+  └─ Flask provisioning portal
+
+eth0
+  ├─ Static gateway IP
+  ├─ DHCP server
+  └─ NAT to wlan0
+
+Portal
+  ├─ Scan WiFi
+  ├─ WPA Personal
+  ├─ WPA Enterprise
+  ├─ Forget networks
+  └─ Setup mode
 ```
 
 ## Installation
