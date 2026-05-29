@@ -1,7 +1,7 @@
 [Unit]
 Description=Wipi Flask Wi-Fi Portal
-After=NetworkManager.service
-Wants=NetworkManager.service
+After=NetworkManager.service wipi-autohotspot.service
+Wants=NetworkManager.service wipi-autohotspot.service
 
 [Service]
 Type=simple
