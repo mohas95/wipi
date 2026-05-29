@@ -6,7 +6,7 @@ HOTSPOT_NAME="WipiSetup"
 HOTSPOT_SSID="WipiSetup"
 HOTSPOT_PASS="configureme123"
 
-CHECK_INTERVAL=120
+CHECK_INTERVAL=60
 
 has_internet() {
     ping -I "$WIFI_IF" -c 1 -W 3 8.8.8.8 >/dev/null 2>&1
