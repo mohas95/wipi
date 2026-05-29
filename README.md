@@ -63,4 +63,4 @@ sudo systemctl start wipi-portal
 - default hostname: wipi.local
 - default ssid (hotspot mode): WipiSetup
 - default psk: configureme123
-- wipi configuration portal: http://< device ip address or hostname.local>
+- wipi configuration portal: http://< device ip address or hostname.local >
