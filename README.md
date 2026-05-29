@@ -11,6 +11,12 @@ default hostname: wipi.local
 git clone git@github.com:mohas95/wipi.git
 cd wipi
 
+python3 -m venv venv
+
+source venv/bin/activate
+
+pip install --upgrade -r requirements.txt
+
 chmod +x setup-pi-ethernet-gateway.sh
 sudo ./setup-pi-ethernet-gateway.sh
 
